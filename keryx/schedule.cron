@@ -1,0 +1,3 @@
+# Keryx daily run at 07:45 Vancouver time
+CRON_TZ=America/Vancouver
+45 7 * * * /usr/local/bin/hermes run keryx-daily
