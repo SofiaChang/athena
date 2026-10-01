@@ -1,0 +1,10 @@
+{
+  "cash": 0.1,
+  "holdings": [
+    { "ticker": "AAPL", "weight": 0.2 },
+    { "ticker": "MSFT", "weight": 0.2 },
+    { "ticker": "NVDA", "weight": 0.15 },
+    { "ticker": "VOO", "weight": 0.25 },
+    { "ticker": "BRK.B", "weight": 0.1 }
+  ]
+}

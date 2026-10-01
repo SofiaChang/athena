@@ -1,0 +1,6 @@
+.git
+.quantum-trader-cache
+vault
+node_modules
+portfolio.json
+*.log

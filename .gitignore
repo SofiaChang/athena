@@ -1,0 +1,17 @@
+# Personal content — never publish
+vault/
+n8n-data/
+
+# Secrets
+.env
+.env.*
+.envrc
+!.env.*.example
+
+# Runtime state
+.quantum-trader-cache/
+.linear-sync-map.json
+portfolio.json
+
+# OS noise
+.DS_Store

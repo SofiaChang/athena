@@ -1,0 +1,19 @@
+services:
+  quantum-trader:
+    build: .
+    ports:
+      - "8787:8787"
+    environment:
+      # Fill these in via a local .env file (never commit it).
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ALPHAVANTAGE_API_KEY: ${ALPHAVANTAGE_API_KEY:-}
+    volumes:
+      - qt-data:/data
+      # Optional: your real portfolio, read-only. If the file is absent, Docker
+      # creates a directory there; the app tolerates that and runs without
+      # portfolio context. Copy portfolio.example.json to get started.
+      - ./portfolio.json:/data/portfolio.json:ro
+
+volumes:
+  qt-data:
