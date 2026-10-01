@@ -48,7 +48,18 @@ const PAGE_STYLE = `
   .conviction-high { color: #7ee787; } .conviction-medium { color: #f0b72f; }
   .conviction-low { color: #f85149; }
   .error { border-left: 3px solid #f85149; background: #2d1518; padding: 0.8rem 1rem;
-    border-radius: 0 6px 6px 0; }
+    border-radius: 0 6px 6px 0; margin-top: 0.75rem; }
+  .status-panel { background: #161b22; border: 1px solid #30363d; border-radius: 8px;
+    padding: 1rem 1.1rem; margin-top: 1.25rem; }
+  .status-head { display: flex; align-items: center; gap: 0.6rem; font-weight: 600;
+    font-size: 0.9rem; }
+  .spinner { width: 14px; height: 14px; border: 2px solid #30363d;
+    border-top-color: #7ee787; border-radius: 50%; animation: qt-spin 0.8s linear infinite; }
+  @keyframes qt-spin { to { transform: rotate(360deg); } }
+  .status-panel.done .spinner { display: none; }
+  #qt-steps { list-style: none; padding-left: 0; margin: 0.6rem 0 0; }
+  #qt-steps li { padding: 0.15rem 0; }
+  button:disabled { background: #1a4d26; color: #9da7b3; cursor: wait; }
   ul { margin: 0.4rem 0; padding-left: 1.2rem; }
   code { background: #161b22; padding: 0.1rem 0.35rem; border-radius: 4px; }
 `;
@@ -90,10 +101,86 @@ ${body}
 </main></body></html>`;
 }
 
+const FORM_SCRIPT = `
+document.getElementById('qt-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const form = event.target;
+  const button = form.querySelector('button[type=submit]');
+  const status = document.getElementById('qt-status');
+  const steps = document.getElementById('qt-steps');
+  const statusText = document.getElementById('qt-status-text');
+  button.disabled = true;
+  button.textContent = 'Running...';
+  status.style.display = 'block';
+  status.classList.remove('done');
+  steps.innerHTML = '';
+  statusText.textContent = 'Run in progress';
+  const startedAt = Date.now();
+  const addStep = (message) => {
+    const li = document.createElement('li');
+    li.className = 'meta';
+    li.textContent = '[' + Math.round((Date.now() - startedAt) / 1000) + 's] ' + message;
+    steps.appendChild(li);
+  };
+  const fail = (message) => {
+    status.classList.add('done');
+    statusText.textContent = 'Run failed';
+    const div = document.createElement('div');
+    div.className = 'error';
+    div.textContent = message;
+    status.appendChild(div);
+    button.disabled = false;
+    button.textContent = 'Run analysis';
+  };
+  try {
+    const response = await fetch('/analyze/stream', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams(new FormData(form)),
+    });
+    if (!response.ok || !response.body) {
+      throw new Error('HTTP ' + response.status);
+    }
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    for (;;) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      buffer += decoder.decode(chunk.value, { stream: true });
+      let boundary;
+      while ((boundary = buffer.indexOf('\\n\\n')) !== -1) {
+        const rawEvent = buffer.slice(0, boundary);
+        buffer = buffer.slice(boundary + 2);
+        const eventLine = rawEvent.split('\\n').find((line) => line.startsWith('event: '));
+        const dataLine = rawEvent.split('\\n').find((line) => line.startsWith('data: '));
+        if (!dataLine) continue;
+        const kind = eventLine ? eventLine.slice(7) : 'step';
+        const data = JSON.parse(dataLine.slice(6));
+        if (kind === 'step') {
+          addStep(data);
+        } else if (kind === 'result') {
+          document.open();
+          document.write(data);
+          document.close();
+          return;
+        } else if (kind === 'error') {
+          fail(data);
+          return;
+        }
+      }
+    }
+    fail('Connection closed before the result arrived.');
+  } catch (error) {
+    fail(error.message);
+  }
+});
+`;
+
 function formPage(errorMessage = "") {
   return page(`
 ${errorMessage ? `<div class="error">${escapeHtml(errorMessage)}</div>` : ""}
-<form method="POST" action="/analyze">
+<form method="POST" action="/analyze" id="qt-form">
   <div class="row">
     <div>
       <label for="tickers">Tickers (comma-separated)</label>
@@ -111,8 +198,13 @@ ${errorMessage ? `<div class="error">${escapeHtml(errorMessage)}</div>` : ""}
     <label for="signals-only" style="margin:0">Signals only (skip LLM — no API key needed)</label>
   </div>
   <button type="submit">Run analysis</button>
-  <p class="meta">Full runs take 30-90s: two LLM passes plus market data. Notes are written to the vault volume.</p>
-</form>`);
+  <p class="meta">Full runs take 60-120s: two LLM passes plus market data. Notes are written to the vault volume.</p>
+</form>
+<div id="qt-status" class="status-panel" style="display:none">
+  <div class="status-head"><span class="spinner"></span><span id="qt-status-text">Run in progress</span></div>
+  <ul id="qt-steps"></ul>
+</div>
+<script>${FORM_SCRIPT}</script>`);
 }
 
 function renderCompany(company) {
@@ -256,6 +348,35 @@ function createServer() {
       if (request.method === "GET" && url.pathname === "/healthz") {
         response.writeHead(200, { "content-type": "application/json" });
         response.end(JSON.stringify({ ok: true }));
+        return;
+      }
+      if (request.method === "POST" && url.pathname === "/analyze/stream") {
+        const body = await readBody(request);
+        const form = parseForm(body);
+        log(
+          `analyze/stream: tickers=[${form.tickers.join(",")}] article=${form.articleText ? "yes" : "no"} ` +
+            `signalsOnly=${form.signalsOnly}`,
+        );
+        response.writeHead(200, {
+          "content-type": "text/event-stream; charset=utf-8",
+          "cache-control": "no-cache",
+          connection: "keep-alive",
+        });
+        const send = (event, data) => {
+          response.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+        };
+        const heartbeat = setInterval(() => response.write(": heartbeat\n\n"), 15000);
+        request.on("close", () => clearInterval(heartbeat));
+        try {
+          send("step", "Run started.");
+          const result = await runQuantumTrader(form, (message) => send("step", message));
+          send("result", resultPage(result));
+        } catch (runError) {
+          send("error", runError.message);
+        } finally {
+          clearInterval(heartbeat);
+          response.end();
+        }
         return;
       }
       if (request.method === "POST" && url.pathname === "/analyze") {
