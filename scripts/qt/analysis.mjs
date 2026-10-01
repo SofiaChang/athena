@@ -1,6 +1,8 @@
 // LLM analysis layer: provider clients, the quantum-trader prompt, and
 // structured-output parsing. Supports Anthropic and OpenAI via plain fetch.
+import { spawn } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -22,6 +24,9 @@ const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_DEFAULT_MODEL = "claude-sonnet-4-5";
 const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
 const OPENAI_DEFAULT_MODEL = "gpt-4o";
+const CODEX_DEFAULT_BIN = "/opt/homebrew/lib/node_modules/@openai/codex/bin/codex.js";
+const CODEX_DEFAULT_MODEL = "gpt-5.5";
+const CODEX_TIMEOUT_MS = 300_000;
 
 const ANALYSIS_SCHEMA_DESCRIPTION = `{
   "thesis": "2-4 sentence core thesis of what the input means for markets",
@@ -72,6 +77,17 @@ const ANALYSIS_SCHEMA_DESCRIPTION = `{
   }
 }`;
 
+function codexBin() {
+  const configured = process.env.QT_CODEX_BIN?.trim();
+  if (configured) {
+    return configured;
+  }
+  if (fs.existsSync(CODEX_DEFAULT_BIN)) {
+    return CODEX_DEFAULT_BIN;
+  }
+  return "codex";
+}
+
 function resolveProvider() {
   const explicit = process.env.QT_LLM_PROVIDER?.trim().toLowerCase();
   if (explicit) {
@@ -82,6 +98,10 @@ function resolveProvider() {
   }
   if (process.env.OPENAI_API_KEY?.trim()) {
     return "openai";
+  }
+  // ChatGPT-subscription path: Codex CLI signed in via `codex login`.
+  if (fs.existsSync(path.join(os.homedir(), ".codex", "auth.json"))) {
+    return "codex";
   }
   return null;
 }
@@ -157,12 +177,73 @@ async function openaiChat(systemPrompt, userPrompt) {
   return text;
 }
 
+function codexChat(systemPrompt, userPrompt) {
+  // ChatGPT-subscription provider: drives the Codex CLI (OAuth login, no API
+  // key billing). Runs read-only in a temp workspace; the last agent message
+  // is the response.
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "qt-codex-"));
+  const outputFile = path.join(workDir, "last-message.txt");
+  const args = [
+    "exec",
+    "-s", "read-only",
+    "--skip-git-repo-check",
+    "-C", workDir,
+    "-o", outputFile,
+  ];
+  // Always pass -m: ~/.codex/config.toml may name a model the ChatGPT-account
+  // endpoint rejects; QT_LLM_MODEL overrides our default.
+  args.push("-m", process.env.QT_LLM_MODEL?.trim() || CODEX_DEFAULT_MODEL);
+  args.push(`${systemPrompt}\n\n---\n\n${userPrompt}`);
+
+  return new Promise((resolve, reject) => {
+    const child = spawn(codexBin(), args, {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    // Drain stdout: an undrained pipe fills its OS buffer and the child
+    // blocks forever, surfacing as a spurious timeout.
+    child.stdout.resume();
+    let stderr = "";
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk;
+    });
+    const timer = setTimeout(() => {
+      child.kill("SIGKILL");
+      reject(new Error(`Codex CLI timed out after ${CODEX_TIMEOUT_MS / 1000}s.`));
+    }, CODEX_TIMEOUT_MS);
+    child.on("error", (error) => {
+      clearTimeout(timer);
+      reject(new Error(`Codex CLI failed to start: ${error.message}`));
+    });
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      let text = "";
+      try {
+        text = fs.readFileSync(outputFile, "utf8").trim();
+      } catch {
+        // Fall through to the error below.
+      }
+      fs.rmSync(workDir, { recursive: true, force: true });
+      if (code === 0 && text) {
+        resolve(text);
+        return;
+      }
+      const detail = stderr.trim().split("\n").slice(-3).join(" ").slice(0, 400);
+      reject(
+        new Error(
+          `Codex CLI failed (exit ${code}): ${detail || "no output"}. ` +
+            "If your login expired, run `codex login`.",
+        ),
+      );
+    });
+  });
+}
+
 async function llmChat(systemPrompt, userPrompt) {
   const provider = resolveProvider();
   if (!provider) {
     throw new Error(
-      "No LLM configured. Set ANTHROPIC_API_KEY or OPENAI_API_KEY " +
-        "(optionally QT_LLM_PROVIDER / QT_LLM_MODEL).",
+      "No LLM configured. Set ANTHROPIC_API_KEY or OPENAI_API_KEY, or sign in " +
+        "with the Codex CLI (`codex login`) to use your ChatGPT subscription.",
     );
   }
   if (provider === "anthropic") {
@@ -170,6 +251,9 @@ async function llmChat(systemPrompt, userPrompt) {
   }
   if (provider === "openai") {
     return openaiChat(systemPrompt, userPrompt);
+  }
+  if (provider === "codex") {
+    return codexChat(systemPrompt, userPrompt);
   }
   throw new Error(`Unknown QT_LLM_PROVIDER: ${provider}`);
 }

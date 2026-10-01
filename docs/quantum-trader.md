@@ -44,10 +44,17 @@ and Leontief input-output economics.
 
 ## Setup
 
-Required for full runs:
+Required for full runs — one of:
 
-- `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` — the analysis engine.
-  Optional overrides: `QT_LLM_PROVIDER` (`anthropic`|`openai`), `QT_LLM_MODEL`.
+- **Codex CLI signed in with your ChatGPT subscription** (`npm i -g
+  @openai/codex && codex login`) — no API billing; the app drives
+  `codex exec` headlessly. Override the binary with `QT_CODEX_BIN`, force with
+  `QT_LLM_PROVIDER=codex`. Works for local runs; the Docker image has no
+  Codex CLI, so containers still need an API key.
+- `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` — pay-per-use API billing.
+
+Optional overrides: `QT_LLM_PROVIDER` (`anthropic`|`openai`|`codex`),
+`QT_LLM_MODEL`.
 
 Recommended:
 
