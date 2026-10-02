@@ -8,6 +8,14 @@
     "env": { "QT_PORT": "0" }
   },
   {
+    "id": "content-creator",
+    "name": "Content Creator",
+    "description": "LinkedIn/YouTube pipeline: inbox, ideas, drafts, published, with LLM ideate/draft/review/repurpose in your voice.",
+    "kind": "node-server",
+    "entry": "scripts/content-manager/server.mjs",
+    "env": { "CONTENT_PORT": "0" }
+  },
+  {
     "id": "n8n",
     "name": "n8n Workflows",
     "description": "Automation service (Docker). Starts the compose stack on demand.",
