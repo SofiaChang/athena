@@ -401,7 +401,21 @@ function createServer() {
   });
 }
 
-const port = Number(process.env.QT_PORT) || DEFAULT_PORT;
-createServer().listen(port, () => {
-  log(`listening on http://0.0.0.0:${port}`);
+function resolvePort() {
+  const raw = process.env.QT_PORT;
+  if (raw === undefined || raw.trim() === "") {
+    return DEFAULT_PORT;
+  }
+  const port = Number(raw);
+  if (!Number.isInteger(port) || port < 0 || port > 65535) {
+    throw new Error(`Invalid QT_PORT: ${raw}`);
+  }
+  return port;
+}
+
+const server = createServer();
+server.listen(resolvePort(), () => {
+  // With QT_PORT=0 the OS assigns an ephemeral port. The Athena hub parses
+  // this line from STDOUT to learn the port — do not move it to stderr.
+  process.stdout.write(`listening on http://0.0.0.0:${server.address().port}\n`);
 });

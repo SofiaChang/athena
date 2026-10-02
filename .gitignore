@@ -12,6 +12,9 @@ n8n-data/
 .quantum-trader-cache/
 .linear-sync-map.json
 portfolio.json
+# Hub build artifacts
+node_modules/
+desktop/src-tauri/target/
 
 # OS noise
 .DS_Store

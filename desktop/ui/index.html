@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Athena</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    background: #0d1117; color: #e6edf3; }
+  main { max-width: 760px; margin: 0 auto; padding: 2.5rem 1.5rem; }
+  h1 { font-size: 1.35rem; letter-spacing: 0.04em; }
+  h1 .accent { color: #7ee787; }
+  .subtitle { color: #9da7b3; font-size: 0.8rem; margin-bottom: 2rem; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 1rem; }
+  .tile { background: #161b22; border: 1px solid #30363d; border-radius: 10px;
+    padding: 1.1rem 1.2rem; cursor: pointer; text-align: left; color: inherit;
+    font: inherit; transition: border-color 0.15s, transform 0.1s; width: 100%; }
+  .tile:hover { border-color: #7ee787; transform: translateY(-1px); }
+  .tile:disabled { cursor: wait; opacity: 0.7; transform: none; }
+  .tile h2 { margin: 0 0 0.4rem; font-size: 1rem; }
+  .tile p { margin: 0; color: #9da7b3; font-size: 0.78rem; line-height: 1.5; }
+  .tile .status { display: inline-block; margin-top: 0.6rem; font-size: 0.72rem;
+    color: #79c0ff; }
+  .tile .status.error { color: #f85149; }
+  .tile .status.open { color: #7ee787; }
+  .empty { color: #9da7b3; font-size: 0.85rem; }
+</style>
+</head>
+<body>
+<main>
+  <h1><span class="accent">&#9672;</span> Athena</h1>
+  <p class="subtitle">App hub. Click a tile to launch; each app opens in its own window.</p>
+  <div class="grid" id="grid"><p class="empty">Loading apps...</p></div>
+</main>
+<script>
+  const { invoke } = window.__TAURI__.core;
+  const grid = document.getElementById('grid');
+
+  function setStatus(tile, text, className) {
+    const status = tile.querySelector('.status');
+    status.textContent = text;
+    status.className = 'status' + (className ? ' ' + className : '');
+  }
+
+  async function launch(app, tile) {
+    tile.disabled = true;
+    setStatus(tile, 'launching...', '');
+    try {
+      await invoke('launch_app', { id: app.id });
+      setStatus(tile, 'open in its own window', 'open');
+    } catch (error) {
+      setStatus(tile, String(error), 'error');
+    } finally {
+      tile.disabled = false;
+    }
+  }
+
+  function render(apps) {
+    grid.innerHTML = '';
+    if (apps.length === 0) {
+      grid.innerHTML = '<p class="empty">No apps registered. Add one to desktop/apps.json.</p>';
+      return;
+    }
+    for (const app of apps) {
+      const tile = document.createElement('button');
+      tile.className = 'tile';
+      tile.innerHTML =
+        '<h2></h2><p></p><span class="status"></span>';
+      tile.querySelector('h2').textContent = app.name;
+      tile.querySelector('p').textContent = app.description;
+      tile.addEventListener('click', () => launch(app, tile));
+      grid.appendChild(tile);
+    }
+  }
+
+  invoke('list_apps')
+    .then(render)
+    .catch((error) => {
+      grid.innerHTML = '<p class="empty"></p>';
+      grid.querySelector('.empty').textContent = 'Failed to load apps: ' + error;
+    });
+</script>
+</body>
+</html>
