@@ -7,6 +7,7 @@ This file guides coding agents in this repository.
 - Repo is a lightweight project scaffold, not a full app package.
 - There is no `package.json` in this repository.
 - Main code artifacts are:
+  - `desktop/` (Tauri desktop hub; app registry in `desktop/apps.json`)
   - `agent-plan.jsx` (React-style plan UI + Linear sync logic)
   - `scripts/sync-linear.mjs` (Node CLI sync script)
   - `personal-ai-agent-project-brief.md` (source plan data)
@@ -161,6 +162,9 @@ If these files are added later, treat them as higher-priority behavioral constra
 ## Agent workflow guidance for this repo
 
 1. Read `README.md` and `docs/` before editing behavior.
+1a. Adding any new runnable app or service to this repo? Register it in the
+   desktop hub per `skills/athena-hub-apps/SKILL.md` (one entry in
+   `desktop/apps.json`; node servers must print their port to stdout).
 2. If changing Linear sync logic, update both:
    - `agent-plan.jsx`
    - `scripts/sync-linear.mjs`

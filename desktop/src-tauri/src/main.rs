@@ -37,6 +37,21 @@ struct HubState {
     running: Mutex<HashMap<String, RunningApp>>,
 }
 
+// Packaged .app processes get a minimal PATH (/usr/bin:/bin:...), so resolve
+// Homebrew/Docker-Desktop install locations explicitly before falling back
+// to PATH lookup (dev mode).
+fn resolve_bin(name: &str, candidates: &[&str]) -> String {
+    for candidate in candidates {
+        if std::path::Path::new(candidate).exists() {
+            return (*candidate).to_string();
+        }
+    }
+    name.to_string()
+}
+
+const NODE_CANDIDATES: &[&str] = &["/opt/homebrew/bin/node", "/usr/local/bin/node"];
+const DOCKER_CANDIDATES: &[&str] = &["/usr/local/bin/docker", "/opt/homebrew/bin/docker"];
+
 fn repo_root() -> PathBuf {
     // src-tauri -> desktop -> repo root.
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -98,7 +113,7 @@ fn launch_node_server(app: &AppEntry, state: &HubState) -> Result<String, String
         }
     }
 
-    let mut command = Command::new("node");
+    let mut command = Command::new(resolve_bin("node", NODE_CANDIDATES));
     command
         .arg(&app.entry)
         .current_dir(repo_root())
@@ -155,7 +170,7 @@ fn launch_docker_service(app: &AppEntry) -> Result<String, String> {
         return Ok(app.url.clone());
     }
 
-    let status = Command::new("docker")
+    let status = Command::new(resolve_bin("docker", DOCKER_CANDIDATES))
         .args(["compose", "-f", &app.compose_file, "up", "-d"])
         .current_dir(repo_root())
         .status()
