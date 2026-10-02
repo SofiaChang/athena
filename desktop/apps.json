@@ -16,6 +16,14 @@
     "env": { "CONTENT_PORT": "0" }
   },
   {
+    "id": "custodian",
+    "name": "Custodian",
+    "description": "Chat with a Kimi agent that keeps your Obsidian vault: log entries, manage goals and todos without opening Obsidian.",
+    "kind": "node-server",
+    "entry": "scripts/custodian/server.mjs",
+    "env": { "CUSTODIAN_PORT": "0" }
+  },
+  {
     "id": "n8n",
     "name": "n8n Workflows",
     "description": "Automation service (Docker). Starts the compose stack on demand.",

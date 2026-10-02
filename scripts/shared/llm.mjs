@@ -134,9 +134,25 @@ function codexChat(systemPrompt, userPrompt) {
   args.push("-m", process.env.QT_LLM_MODEL?.trim() || CODEX_DEFAULT_MODEL);
   args.push(`${systemPrompt}\n\n---\n\n${userPrompt}`);
 
+  // GUI apps (the Athena hub) run with a minimal PATH where `node` does not
+  // exist, and codex.js has a `#!/usr/bin/env node` shebang — spawning it
+  // directly fails with exit 127. Run the script through the Node binary
+  // that is already executing this process instead.
+  const bin = codexBin();
+  // Only absolute .js paths go through execPath: a relative .js name would be
+  // resolved against the cwd, not PATH, when run through Node directly.
+  const isJsScript = bin.endsWith(".js") && path.isAbsolute(bin);
+  const command = isJsScript ? process.execPath : bin;
+  const fullArgs = isJsScript ? [bin, ...args] : args;
+  const childEnv = {
+    ...process.env,
+    PATH: `/opt/homebrew/bin:/usr/local/bin:${process.env.PATH || "/usr/bin:/bin"}`,
+  };
+
   return new Promise((resolve, reject) => {
-    const child = spawn(codexBin(), args, {
+    const child = spawn(command, fullArgs, {
       stdio: ["ignore", "pipe", "pipe"],
+      env: childEnv,
     });
     // Drain stdout: an undrained pipe fills its OS buffer and the child
     // blocks forever, surfacing as a spurious timeout.
@@ -167,12 +183,10 @@ function codexChat(systemPrompt, userPrompt) {
         return;
       }
       const detail = stderr.trim().split("\n").slice(-3).join(" ").slice(0, 400);
-      reject(
-        new Error(
-          `Codex CLI failed (exit ${code}): ${detail || "no output"}. ` +
-            "If your login expired, run `codex login`.",
-        ),
-      );
+      const authHint = /401|unauthorized|not logged in|login required|invalid (api.?key|token|credentials)/i.test(detail)
+        ? " If your login expired, run `codex login`."
+        : "";
+      reject(new Error(`Codex CLI failed (exit ${code}): ${detail || "no output"}.${authHint}`));
     });
   });
 }
